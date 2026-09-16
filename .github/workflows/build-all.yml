@@ -1,4 +1,4 @@
-name: build-debs
+name: build
 
 permissions:
   contents: write
@@ -128,6 +128,7 @@ jobs:
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
       - name: Compilar pacote
+        if: false
         run: |
           PKG="${{ matrix.package }}"
           LATEST="${{ matrix.version }}"
@@ -165,6 +166,7 @@ jobs:
       - name: Push do arquivo de versão local
         working-directory: ${{ github.workspace }}
         run: |
+          cd "${GITHUB_WORKSPACE}"
           git add "versions/${{ matrix.package }}.txt"
           if ! git diff --cached --quiet; then
             git commit -m "chore(${{ matrix.package }}): update version file to ${{ matrix.version }} [skip ci]"
