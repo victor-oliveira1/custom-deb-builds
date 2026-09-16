@@ -84,7 +84,8 @@ jobs:
           DEPS=$(yq -r '.deps' "$RECIPE")
           DEB_DEPENDS=$(yq -r '.deb_depends' "$RECIPE")
           BUILD_CMD=$(yq -r '.build_cmd' "$RECIPE")
-          DESC=$(yq -r '.description' "$RECIPE")
+          DESC_SHORT=$(yq -r '.description' "$RECIPE")
+          DESC_LONG=$(yq -r '.long_description' "$RECIPE" | sed 's/^/ /')
           VERSION="${{ needs.check.outputs.version }}"
           
           # Instala dependências especificadas no YAML
@@ -103,16 +104,17 @@ jobs:
           Section: net
           Priority: optional
           Standards-Version: 3.9.2
-
+          
           Package: ${NAME}
           Version: ${VERSION#v}
           Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
           Architecture: amd64
           Depends: ${DEB_DEPENDS}
           Files:$(while read L; do D=${L%/*}; echo " ./prefix$L $D/"; done < install_manifest.txt)
-          Description: ${DESC}
+          Description: ${DESC_SHORT}
+          ${DESC_LONG}
           EOF1
-
+          
           DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build "${NAME}.control"
           
           # Guarda o artefato para mover depois
