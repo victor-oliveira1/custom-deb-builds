@@ -27,23 +27,14 @@ jobs:
             CURRENT=$(cat version.txt)
           fi
 
-          #LATEST=$(curl -s https://api.github.com/repos/d99kris/nchat/releases/latest | jq -r .tag_name)
           LATEST=$(curl -s https://github.com/d99kris/nchat/releases.atom | grep -oP '(?<=/tag/)[^"]+' | head -n 1)
 
           if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ] && [ "$LATEST" != "null" ]; then
             echo "build=true" >> $GITHUB_OUTPUT
             echo "version=$LATEST" >> $GITHUB_OUTPUT
-            echo "$LATEST" > version.txt
           else
             echo "build=false" >> $GITHUB_OUTPUT
           fi
-
-      - name: Auto commit version file update
-        if: steps.check.outputs.build == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Update nchat version to ${{ steps.check.outputs.version }} [skip ci]"
-          file_pattern: 'version.txt'
 
   build:
     needs: check
@@ -53,6 +44,9 @@ jobs:
       image: debian:stable
 
     steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+
       - name: Build and create deb package
         run: |
           apt-get update
@@ -110,3 +104,13 @@ jobs:
           token: ${{ secrets.DEBIAN_REPO_TOKEN }}
           commit_message: "chore: add nchat package ${{ needs.check.outputs.version }}"
           file_pattern: 'deb/nchat*.deb Packages* Release'
+
+      - name: Update local version file on success
+        run: |
+          echo "${{ needs.check.outputs.version }}" > version.txt
+
+      - name: Auto commit version file update
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update nchat version to ${{ needs.check.outputs.version }} [skip ci]"
+          file_pattern: 'version.txt'
