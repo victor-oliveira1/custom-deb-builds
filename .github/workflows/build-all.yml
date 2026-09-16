@@ -1,4 +1,4 @@
-name: build-matrix-debs
+name: build-debs
 
 permissions:
   contents: write
@@ -9,7 +9,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 1. Busca os programas (diretórios em packages)
+  # ------------------------------------------------------------------
+  # JOB 1: Descobre todos os diretórios em packages/
+  # ------------------------------------------------------------------
   discover:
     runs-on: ubuntu-latest
     outputs:
@@ -21,16 +23,98 @@ jobs:
           PKGS=$(ls -d packages/*/ | xargs -n 1 basename | jq -R . | jq -s -c .)
           echo "packages=${PKGS}" >> $GITHUB_OUTPUT
 
-  # 2. Executa a matriz para cada programa
-  build-and-deploy:
+  # ------------------------------------------------------------------
+  # JOB 2: Checa versões em paralelo e filtra quem precisa de build
+  # ------------------------------------------------------------------
+  check-versions:
     needs: discover
+    runs-on: ubuntu-latest
+    outputs:
+      build_matrix: ${{ steps.filter.outputs.build_matrix }}
+      has_updates: ${{ steps.filter.outputs.has_updates }}
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.discover.outputs.packages) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar versão do pacote
+        id: check
+        run: |
+          PKG="${{ matrix.package }}"
+          PKG_DIR="packages/${PKG}"
+          VERSION_FILE="versions/${PKG}.txt"
+          
+          CURRENT=""
+          [ -f "$VERSION_FILE" ] && CURRENT=$(cat "$VERSION_FILE")
+
+          chmod +x "${PKG_DIR}/check.sh"
+          LATEST=$("${PKG_DIR}/check.sh")
+
+          if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ]; then
+            echo "Nova versão detectada para ${PKG}: ${LATEST} (Atual: ${CURRENT})"
+            
+            # Salva o resultado em um arquivo temporário de artefato
+            mkdir -p /tmp/updates
+            echo "{\"package\": \"${PKG}\", \"version\": \"${LATEST}\"}" > "/tmp/updates/${PKG}.json"
+          else
+            echo "${PKG} já está na versão mais recente (${CURRENT})."
+          fi
+
+      - name: Salvar registro de atualização
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-${{ matrix.package }}
+          path: /tmp/updates/*.json
+          retention-days: 1
+          if-no-files-found: ignore
+
+  # Step consolidado para gerar a matriz final dos programas que mudaram
+  prepare-builds:
+    needs: check-versions
+    runs-on: ubuntu-latest
+    outputs:
+      build_matrix: ${{ steps.filter.outputs.build_matrix }}
+      has_updates: ${{ steps.filter.outputs.has_updates }}
+    steps:
+      - name: Baixar registros de atualização
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/all-updates
+          pattern: update-*
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Gerar matriz apenas para pacotes desatualizados
+        id: filter
+        run: |
+          if [ -d "/tmp/all-updates" ] && [ "$(ls -A /tmp/all-updates/*.json 2>/dev/null)" ]; then
+            # Agrupa os JSONs individuais em um único array JSON
+            MATRIX=$(jq -s -c . /tmp/all-updates/*.json)
+            echo "build_matrix=${MATRIX}" >> $GITHUB_OUTPUT
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "Pacotes pendentes de build: ${MATRIX}"
+          else
+            echo "build_matrix=[]" >> $GITHUB_OUTPUT
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "Nenhum pacote precisa de atualização."
+          fi
+
+  # ------------------------------------------------------------------
+  # JOB 3: Compila e faz deploy APENAS dos pacotes desatualizados
+  # ------------------------------------------------------------------
+  build-and-deploy:
+    needs: prepare-builds
+    if: needs.prepare-builds.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
     container:
       image: debian:stable
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJson(needs.discover.outputs.packages) }}
+        include: ${{ fromJSON(needs.prepare-builds.outputs.build_matrix) }}
 
     steps:
       - name: Checkout repositório principal
@@ -43,70 +127,46 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
-      # Executa o check e compila (se houver versão nova)
-      - name: Checar versão e Compilar
-        id: build
+      - name: Compilar pacote
         run: |
           PKG="${{ matrix.package }}"
+          LATEST="${{ matrix.version }}"
           PKG_DIR="packages/${PKG}"
-          VERSION_FILE="versions/${PKG}.txt"
           
           mkdir -p /tmp/debs versions
+          chmod +x "${PKG_DIR}/build.sh"
+
+          WORK_DIR=$(mktemp -d)
+          (cd "$WORK_DIR" && "${GITHUB_WORKSPACE}/${PKG_DIR}/build.sh" "$LATEST" "/tmp/debs")
           
-          CURRENT=""
-          [ -f "$VERSION_FILE" ] && CURRENT=$(cat "$VERSION_FILE")
+          # Atualiza a versão local
+          echo "$LATEST" > "versions/${PKG}.txt"
 
-          chmod +x "${PKG_DIR}/check.sh" "${PKG_DIR}/build.sh"
-          LATEST=$("${PKG_DIR}/check.sh")
-
-          if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ]; then
-            echo "Nova versão encontrada para ${PKG}: ${LATEST}"
-            WORK_DIR=$(mktemp -d)
-            
-            # Compila o programa
-            (cd "$WORK_DIR" && "${GITHUB_WORKSPACE}/${PKG_DIR}/build.sh" "$LATEST" "/tmp/debs")
-            
-            # Atualiza a versão local apenas em caso de sucesso no build
-            echo "$LATEST" > "$VERSION_FILE"
-            echo "updated=true" >> $GITHUB_OUTPUT
-            echo "latest_version=${LATEST}" >> $GITHUB_OUTPUT
-          else
-            echo "${PKG} já está atualizado (${CURRENT})."
-            echo "updated=false" >> $GITHUB_OUTPUT
-          fi
-
-      # Clona o repositório debian_repo
       - name: Clonar debian_repo
-        if: steps.build.outputs.updated == 'true'
         uses: actions/checkout@v4
         with:
           repository: victor-oliveira1/debian_repo
           token: ${{ secrets.DEBIAN_REPO_TOKEN }}
           path: debian_repo
 
-      # Atualiza o repositório debian_repo com os arquivos .deb
       - name: Atualizar debian_repo com arquivo .deb
-        if: steps.build.outputs.updated == 'true'
+        working-directory: debian_repo
         run: |
           git config --global --add safe.directory "${GITHUB_WORKSPACE}/debian_repo"
-          mkdir -p debian_repo/deb/
-          cp /tmp/debs/*.deb debian_repo/deb/
+          mkdir -p deb/
+          cp /tmp/debs/*.deb deb/
 
-          cd debian_repo
           git add deb/*.deb
           if ! git diff --cached --quiet; then
-            git commit -m "chore(${{ matrix.package }}): add deb for version ${{ steps.build.outputs.latest_version }}"
+            git commit -m "chore(${{ matrix.package }}): add deb for version ${{ matrix.version }}"
             git push
           fi
 
-      # Atualiza o arquivo de versão local do programa
       - name: Push do arquivo de versão local
-        if: steps.build.outputs.updated == 'true'
         working-directory: ${{ github.workspace }}
         run: |
-          PKG="${{ matrix.package }}"
-          git add "versions/${PKG}.txt"
+          git add "versions/${{ matrix.package }}.txt"
           if ! git diff --cached --quiet; then
-            git commit -m "chore(${PKG}): update version file to ${{ steps.build.outputs.latest_version }} [skip ci]"
+            git commit -m "chore(${{ matrix.package }}): update version file to ${{ matrix.version }} [skip ci]"
             git push
           fi
