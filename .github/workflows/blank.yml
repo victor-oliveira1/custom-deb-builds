@@ -40,8 +40,8 @@ jobs:
           sudo apt-get update && sudo apt-get install -y yq
           
           RECIPE="${{ matrix.recipe }}"
-          APP_NAME=$(yq e '.name' "$RECIPE")
-          REPO=$(yq e '.repo' "$RECIPE")
+          APP_NAME=$(yq -r '.name' "$RECIPE")
+          REPO=$(yq -r '.repo' "$RECIPE")
           
           echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
           
@@ -79,12 +79,12 @@ jobs:
           
           RECIPE=".github/recipes/${{ needs.check.outputs.app_name }}.yml"
           
-          NAME=$(yq e '.name' "$RECIPE")
-          REPO=$(yq e '.repo' "$RECIPE")
-          DEPS=$(yq e '.deps' "$RECIPE")
-          DEB_DEPENDS=$(yq e '.deb_depends' "$RECIPE")
-          BUILD_CMD=$(yq e '.build_cmd' "$RECIPE")
-          DESC=$(yq e '.description' "$RECIPE")
+          NAME=$(yq -r '.name' "$RECIPE")
+          REPO=$(yq -r '.repo' "$RECIPE")
+          DEPS=$(yq -r '.deps' "$RECIPE")
+          DEB_DEPENDS=$(yq -r '.deb_depends' "$RECIPE")
+          BUILD_CMD=$(yq -r '.build_cmd' "$RECIPE")
+          DESC=$(yq -r '.description' "$RECIPE")
           VERSION="${{ needs.check.outputs.version }}"
           
           # Instala dependências especificadas no YAML
