@@ -1,4 +1,4 @@
-name: check-new-version
+name: build-nchat-deb
 
 permissions:
   contents: write
@@ -23,8 +23,8 @@ jobs:
         name: Check latest release
         run: |
           CURRENT=""
-          if [ -f nchat_build_version.txt ]; then
-            CURRENT=$(cat nchat_build_version.txt)
+          if [ -f version.txt ]; then
+            CURRENT=$(cat version.txt)
           fi
 
           #LATEST=$(curl -s https://api.github.com/repos/d99kris/nchat/releases/latest | jq -r .tag_name)
@@ -33,7 +33,7 @@ jobs:
           if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ] && [ "$LATEST" != "null" ]; then
             echo "build=true" >> $GITHUB_OUTPUT
             echo "version=$LATEST" >> $GITHUB_OUTPUT
-            echo "$LATEST" > nchat_build_version.txt
+            echo "$LATEST" > version.txt
           else
             echo "build=false" >> $GITHUB_OUTPUT
           fi
@@ -43,7 +43,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Update nchat version to ${{ steps.check.outputs.version }} [skip ci]"
-          file_pattern: 'nchat_build_version.txt'
+          file_pattern: 'version.txt'
 
   build:
     needs: check
