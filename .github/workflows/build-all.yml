@@ -150,7 +150,6 @@ jobs:
         run: |
           mkdir -p debian_repo/deb/
           cp /tmp/debs/*.deb debian_repo/deb/
-          find
 
       - name: Autocommit dos pacotes .deb no debian_repo
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -160,6 +159,19 @@ jobs:
           file_pattern: 'deb/*.deb'
           commit_user_name: 'github-actions[bot]'
           commit_user_email: 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Checkout repositório principal
+        uses: actions/checkout@v4
+
+      - name: Criar arquivo de versão
+        env:
+          PKG_NAME: ${{ matrix.package }}
+          PKG_VER: ${{ matrix.version }}
+        run: |
+          mkdir -p versions
+          cat <<EOF > "versions/${PKG_NAME}.txt"
+          ${PKG_VER}
+          EOF
 
       - name: Autocommit do arquivo de versão local no repositório principal
         uses: stefanzweifel/git-auto-commit-action@v5
