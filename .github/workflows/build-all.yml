@@ -56,7 +56,6 @@ jobs:
           if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ]; then
             echo "Nova versão detectada para ${PKG}: ${LATEST} (Atual: ${CURRENT})"
             
-            # Salva o resultado em um arquivo temporário de artefato
             mkdir -p /tmp/updates
             echo "{\"package\": \"${PKG}\", \"version\": \"${LATEST}\"}" > "/tmp/updates/${PKG}.json"
           else
@@ -71,7 +70,6 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
 
-  # Step consolidado para gerar a matriz final dos programas que mudaram
   prepare-builds:
     needs: check-versions
     runs-on: ubuntu-latest
@@ -90,8 +88,7 @@ jobs:
       - name: Gerar matriz apenas para pacotes desatualizados
         id: filter
         run: |
-          if [ -d "/tmp/all-updates" ] && [ "$(ls -A /tmp/all-updates/*.json 2>/dev/null)" ]; then
-            # Agrupa os JSONs individuais em um único array JSON
+          if [ -d "/tmp/all-updates" ] && [ "$(ls -A /tmp/all-updates/*.json 2>/devnull)" ]; then
             MATRIX=$(jq -s -c . /tmp/all-updates/*.json)
             echo "build_matrix=${MATRIX}" >> $GITHUB_OUTPUT
             echo "has_updates=true" >> $GITHUB_OUTPUT
@@ -127,7 +124,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
-      - name: Compilar pacote
+      - name: Compilar pacote e gravar arquivo de versão
         run: |
           PKG="${{ matrix.package }}"
           LATEST="${{ matrix.version }}"
@@ -139,8 +136,8 @@ jobs:
           WORK_DIR=$(mktemp -d)
           (cd "$WORK_DIR" && "${GITHUB_WORKSPACE}/${PKG_DIR}/build.sh" "$LATEST" "/tmp/debs")
           
-          # Atualiza a versão local
-          echo "$LATEST" > "versions/${PKG}.txt"
+          # Escreve no arquivo de versão local imediatamente após o sucesso do build
+          echo "$LATEST" > "${GITHUB_WORKSPACE}/versions/${PKG}.txt"
 
       - name: Clonar debian_repo
         uses: actions/checkout@v4
@@ -149,26 +146,25 @@ jobs:
           token: ${{ secrets.DEBIAN_REPO_TOKEN }}
           path: debian_repo
 
-      - name: Atualizar debian_repo com arquivo .deb
-        working-directory: debian_repo
+      - name: Mover arquivos .deb para a pasta do repositório remoto
         run: |
-          git config --global --add safe.directory "${GITHUB_WORKSPACE}/debian_repo"
-          mkdir -p deb/
-          cp /tmp/debs/*.deb deb/
+          mkdir -p debian_repo/deb/
+          cp /tmp/debs/*.deb debian_repo/deb/
 
-          git add deb/*.deb
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(${{ matrix.package }}): add deb for version ${{ matrix.version }}"
-            git push
-          fi
+      - name: Autocommit dos pacotes .deb no debian_repo
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          repository: debian_repo
+          commit_message: "chore(${{ matrix.package }}): add deb for version ${{ matrix.version }}"
+          file_pattern: 'deb/*.deb'
+          commit_user_name: 'github-actions[bot]'
+          commit_user_email: 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Checkout repositório principal
-        uses: actions/checkout@v4
-
-      - name: Push do arquivo de versão local
-        run: |
-          git add "versions/${{ matrix.package }}.txt"
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(${{ matrix.package }}): update version file to ${{ matrix.version }} [skip ci]"
-            git push
-          fi
+      - name: Autocommit do arquivo de versão local no repositório principal
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          repository: .
+          commit_message: "chore(${{ matrix.package }}): update version file to ${{ matrix.version }} [skip ci]"
+          file_pattern: 'versions/*.txt'
+          commit_user_name: 'github-actions[bot]'
+          commit_user_email: 'github-actions[bot]@users.noreply.github.com'
