@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ json(needs.discover.outputs.packages) }}
+        package: ${{ fromJson(needs.discover.outputs.packages) }}
 
     steps:
       - name: Checkout repositório principal
