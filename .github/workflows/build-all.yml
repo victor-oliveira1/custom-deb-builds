@@ -1,0 +1,90 @@
+name: build-all-debs
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:stable
+
+    steps:
+      - name: Checkout do repositório de build
+        uses: actions/checkout@v4
+
+      - name: Verificar versões e compilar pacotes
+        run: |
+          apt-get update && apt-get install -y curl git equivs
+
+          mkdir -p /tmp/debs versions
+
+          for pkg_dir in packages/*/; do
+            [ -d "$pkg_dir" ] || continue
+            APP_NAME=$(basename "$pkg_dir")
+            echo "=========================================="
+            echo " Verificando pacote: $APP_NAME"
+            echo "=========================================="
+
+            VERSION_FILE="${GITHUB_WORKSPACE}/versions/${APP_NAME}.txt"
+            CURRENT=""
+            [ -f "$VERSION_FILE" ] && CURRENT=$(cat "$VERSION_FILE")
+
+            chmod +x "${pkg_dir}check.sh" "${pkg_dir}build.sh"
+
+            LATEST=$("${pkg_dir}check.sh")
+
+            if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ]; then
+              echo "Nova versão encontrada para $APP_NAME: $LATEST (Atual: $CURRENT)"
+
+              WORK_DIR=$(mktemp -d)
+
+              # Tenta compilar. O arquivo de versão só é atualizado se o build terminar com código 0
+              if (cd "$WORK_DIR" && "${GITHUB_WORKSPACE}/${pkg_dir}build.sh" "$LATEST" "/tmp/debs"); then
+                echo "Build de $APP_NAME ($LATEST) concluído com sucesso!"
+                echo "$LATEST" > "$VERSION_FILE"
+              else
+                echo "ERRO: Falha na compilação do pacote $APP_NAME. O arquivo de versão NÃO será atualizado." >&2
+              fi
+            else
+              echo "$APP_NAME já está na versão mais recente ($CURRENT)."
+            fi
+          done
+
+      - name: Checkout do repositório Debian (via Secret Token)
+        if: hashFiles('/tmp/debs/*.deb') != ''
+        uses: actions/checkout@v4
+        with:
+          repository: victor-oliveira1/debian_repo
+          token: ${{ secrets.DEBIAN_REPO_TOKEN }}
+          path: debian_repo
+
+      - name: Mover pacotes .deb para o diretório de destino
+        if: hashFiles('/tmp/debs/*.deb') != ''
+        run: |
+          mkdir -p debian_repo/deb/
+          cp /tmp/debs/*.deb debian_repo/deb/
+
+      - name: Commit e Push dos pacotes .deb no repositório Debian
+        if: hashFiles('/tmp/debs/*.deb') != ''
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          repository: debian_repo
+          token: ${{ secrets.DEBIAN_REPO_TOKEN }}
+          commit_message: "chore: add new compiled deb packages"
+          file_pattern: 'deb/*.deb'
+          commit_user_name: 'github-actions[bot]'
+          commit_user_email: 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Commit dos arquivos de versão no repositório local
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update version files [skip ci]"
+          file_pattern: 'versions/*.txt'
+          commit_user_name: 'github-actions[bot]'
+          commit_user_email: 'github-actions[bot]@users.noreply.github.com'
