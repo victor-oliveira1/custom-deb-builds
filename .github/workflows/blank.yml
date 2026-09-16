@@ -1,101 +1,79 @@
-# This is a basic workflow to help you get started with Actions
-
-name: CI
+name: check-new-version
 
 permissions:
   contents: write
 
-# Controls when the workflow will run
 on:
   schedule:
     - cron: '0 0 * * *'
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   check:
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.check.outputs.build }}
+      version: ${{ steps.check.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - id: check
         name: Check latest release
         run: |
-          test -a nchat_build_version.txt && {
+          CURRENT=""
+          if [ -f nchat_build_version.txt ]; then
             CURRENT=$(cat nchat_build_version.txt)
-          } || {
-            CURRENT=$(curl -s \
-            https://api.github.com/repos/d99kris/nchat/releases/latest \
-            | jq -r .tag_name)
-            echo $CURRENT > nchat_build_version.txt
-          
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-            git add .
-            git commit -m 'Updating version: $CURRENT'
-            git push
-            cd ..
-          }
-          
-          
-          LATEST=$(curl -s \
-            https://api.github.com/repos/d99kris/nchat/releases/latest \
-            | jq -r .tag_name)
+          fi
 
-          test "$CURRENT" = "$LATEST" && {
-            echo "build=false" >> $GITHUB_OUTPUT
-          } || {
+          #LATEST=$(curl -s https://api.github.com/repos/d99kris/nchat/releases/latest | jq -r .tag_name)
+          LATEST=$(curl -s https://github.com/d99kris/nchat/releases.atom | grep -oP '(?<=/tag/)[^"]+' | head -n 1)
+
+          if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ] && [ "$LATEST" != "null" ]; then
             echo "build=true" >> $GITHUB_OUTPUT
+            echo "version=$LATEST" >> $GITHUB_OUTPUT
             echo "$LATEST" > nchat_build_version.txt
-            
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-            git add .
-            git commit -m "Updating version: $CURRENT -> $LATEST"
-            git push
-          }
+          else
+            echo "build=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Auto commit version file update
+        if: steps.check.outputs.build == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update nchat version to ${{ steps.check.outputs.version }} [skip ci]"
+          file_pattern: 'nchat_build_version.txt'
 
   build:
     needs: check
     if: needs.check.outputs.build == 'true'
-      
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
     container:
       image: debian:stable
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4         
-
-      # Runs a set of commands using the runners shell
       - name: Build and create deb package
         run: |
-          apt update
-          apt install -y git sudo lsb-release equivs
+          apt-get update
+          apt-get install -y git sudo lsb-release equivs golang libpng-dev libx11-dev libxcb1-dev
+
           git clone https://github.com/d99kris/nchat
           cd nchat
-          VERSION=$(git tag --sort=-creatordate | head -n 1)
-          git checkout ${VERSION}
-          apt install golang libpng-dev libx11-dev libxcb1-dev -y
+          
+          git checkout "${{ needs.check.outputs.version }}"
+          VERSION="${{ needs.check.outputs.version }}"
+
           ./make.sh deps -y
           NCHAT_CMAKEARGS="-DCMAKE_INSTALL_PREFIX=/usr" ./make.sh build --no-telegram
           cd build
           make install DESTDIR=./prefix
-          
+
           cat <<EOF1 > nchat.control
           Section: net
           Priority: optional
           Standards-Version: 3.9.2
-          
+
           Package: nchat
           Version: ${VERSION#v}
           Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
@@ -106,9 +84,9 @@ jobs:
            nchat is a terminal-based chat client with support for 
            Telegram and WhatsApp. It features a modern ncurses UI.
           EOF1
-          
+
           DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build nchat.control
-      
+
       - name: Checkout Debian repository
         uses: actions/checkout@v4
         with:
@@ -116,21 +94,19 @@ jobs:
           token: ${{ secrets.DEBIAN_REPO_TOKEN }}
           path: debian_repo
 
-      - name: Find deb files
+      - name: Update Debian repository indices
         run: |
-          pwd
-          find . -name "*.deb" -type f
-
-      - name: Updating repo
-        run: |
+          apt-get install -y apt-utils dpkg-dev gzip
           cp nchat/build/nchat*.deb debian_repo/deb/
-          apt install -y apt-utils dpkg-dev
           cd debian_repo
           dpkg-scanpackages . /dev/null > Packages
+          gzip -k -f Packages
           apt-ftparchive release . > Release
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Update nchat package"
-          git push
+      - name: Auto commit Debian repository changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          repository: debian_repo
+          token: ${{ secrets.DEBIAN_REPO_TOKEN }}
+          commit_message: "chore: add nchat package ${{ needs.check.outputs.version }}"
+          file_pattern: 'deb/nchat*.deb Packages* Release'
