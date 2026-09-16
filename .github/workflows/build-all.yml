@@ -1,4 +1,4 @@
-name: build-all-debs
+name: build-matrix-debs
 
 permissions:
   contents: write
@@ -9,82 +9,103 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  # 1. Busca os programas (diretórios em packages)
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.set-matrix.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set-matrix
+        run: |
+          PKGS=$(ls -d packages/*/ | xargs -n 1 basename | jq -R . | jq -s -c .)
+          echo "packages=${PKGS}" >> $GITHUB_OUTPUT
+
+  # 2. Executa a matriz para cada programa
+  build-and-deploy:
+    needs: discover
     runs-on: ubuntu-latest
     container:
       image: debian:stable
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ json(needs.discover.outputs.packages) }}
 
     steps:
-      - name: Checkout do repositório de build
+      - name: Checkout repositório principal
         uses: actions/checkout@v4
 
-      - name: Verificar versões e compilar pacotes
+      - name: Configurar ambiente e Git
         run: |
           apt-get update && apt-get install -y curl git equivs
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
+      # Executa o check e compila (se houver versão nova)
+      - name: Checar versão e Compilar
+        id: build
+        run: |
+          PKG="${{ matrix.package }}"
+          PKG_DIR="packages/${PKG}"
+          VERSION_FILE="versions/${PKG}.txt"
+          
           mkdir -p /tmp/debs versions
+          
+          CURRENT=""
+          [ -f "$VERSION_FILE" ] && CURRENT=$(cat "$VERSION_FILE")
 
-          for pkg_dir in packages/*/; do
-            [ -d "$pkg_dir" ] || continue
-            APP_NAME=$(basename "$pkg_dir")
-            echo "=========================================="
-            echo " Verificando pacote: $APP_NAME"
-            echo "=========================================="
+          chmod +x "${PKG_DIR}/check.sh" "${PKG_DIR}/build.sh"
+          LATEST=$("${PKG_DIR}/check.sh")
 
-            VERSION_FILE="${GITHUB_WORKSPACE}/versions/${APP_NAME}.txt"
-            CURRENT=""
-            [ -f "$VERSION_FILE" ] && CURRENT=$(cat "$VERSION_FILE")
+          if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ]; then
+            echo "Nova versão encontrada para ${PKG}: ${LATEST}"
+            WORK_DIR=$(mktemp -d)
+            
+            # Compila o programa
+            (cd "$WORK_DIR" && "${GITHUB_WORKSPACE}/${PKG_DIR}/build.sh" "$LATEST" "/tmp/debs")
+            
+            # Atualiza a versão local apenas em caso de sucesso no build
+            echo "$LATEST" > "$VERSION_FILE"
+            echo "updated=true" >> $GITHUB_OUTPUT
+            echo "latest_version=${LATEST}" >> $GITHUB_OUTPUT
+          else
+            echo "${PKG} já está atualizado (${CURRENT})."
+            echo "updated=false" >> $GITHUB_OUTPUT
+          fi
 
-            chmod +x "${pkg_dir}check.sh" "${pkg_dir}build.sh"
-
-            LATEST=$("${pkg_dir}check.sh")
-
-            if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ]; then
-              echo "Nova versão encontrada para $APP_NAME: $LATEST (Atual: $CURRENT)"
-
-              WORK_DIR=$(mktemp -d)
-
-              # Tenta compilar. O arquivo de versão só é atualizado se o build terminar com código 0
-              if (cd "$WORK_DIR" && "${GITHUB_WORKSPACE}/${pkg_dir}build.sh" "$LATEST" "/tmp/debs"); then
-                echo "Build de $APP_NAME ($LATEST) concluído com sucesso!"
-                echo "$LATEST" > "$VERSION_FILE"
-              else
-                echo "ERRO: Falha na compilação do pacote $APP_NAME. O arquivo de versão NÃO será atualizado." >&2
-              fi
-            else
-              echo "$APP_NAME já está na versão mais recente ($CURRENT)."
-            fi
-          done
-
-      - name: Checkout do repositório Debian (via Secret Token)
-        if: hashFiles('/tmp/debs/*.deb') != ''
+      # Clona o repositório debian_repo
+      - name: Clonar debian_repo
+        if: steps.build.outputs.updated == 'true'
         uses: actions/checkout@v4
         with:
           repository: victor-oliveira1/debian_repo
           token: ${{ secrets.DEBIAN_REPO_TOKEN }}
           path: debian_repo
 
-      - name: Mover pacotes .deb para o diretório de destino
-        if: hashFiles('/tmp/debs/*.deb') != ''
+      # Atualiza o repositório debian_repo com os arquivos .deb
+      - name: Atualizar debian_repo com arquivo .deb
+        if: steps.build.outputs.updated == 'true'
         run: |
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}/debian_repo"
           mkdir -p debian_repo/deb/
           cp /tmp/debs/*.deb debian_repo/deb/
 
-      - name: Commit e Push dos pacotes .deb no repositório Debian
-        if: hashFiles('/tmp/debs/*.deb') != ''
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          repository: debian_repo
-          token: ${{ secrets.DEBIAN_REPO_TOKEN }}
-          commit_message: "chore: add new compiled deb packages"
-          file_pattern: 'deb/*.deb'
-          commit_user_name: 'github-actions[bot]'
-          commit_user_email: 'github-actions[bot]@users.noreply.github.com'
+          cd debian_repo
+          git add deb/*.deb
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(${{ matrix.package }}): add deb for version ${{ steps.build.outputs.latest_version }}"
+            git push
+          fi
 
-      - name: Commit dos arquivos de versão no repositório local
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore: update version files [skip ci]"
-          file_pattern: 'versions/*.txt'
-          commit_user_name: 'github-actions[bot]'
-          commit_user_email: 'github-actions[bot]@users.noreply.github.com'
+      # Atualiza o arquivo de versão local do programa
+      - name: Push do arquivo de versão local
+        if: steps.build.outputs.updated == 'true'
+        run: |
+          PKG="${{ matrix.package }}"
+          git add "versions/${PKG}.txt"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(${PKG}): update version file to ${{ steps.build.outputs.latest_version }} [skip ci]"
+            git push
+          fi
