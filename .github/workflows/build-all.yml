@@ -150,6 +150,7 @@ jobs:
         run: |
           mkdir -p debian_repo/deb/
           cp /tmp/debs/*.deb debian_repo/deb/
+          find
 
       - name: Autocommit dos pacotes .deb no debian_repo
         uses: stefanzweifel/git-auto-commit-action@v5
