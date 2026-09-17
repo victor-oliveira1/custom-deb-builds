@@ -39,7 +39,7 @@ Version: 0.0~git${VERSION}-1
 Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
 Architecture: amd64
 Depends: $(find prefix -type f -exec dpkg-shlibdeps -O {} + 2>/dev/null | sed -e 's/shlibs:Depends=//' -e 's/\n/,/g' -e 's/,,*/,/g; s/^,//; s/,$//')
-Files:$(while read FILE; do FILE_DIR="${FILE%/*}"; echo " ${FILE} ${FILE_DIR#*prefix}/"; done < <(find prefix/ -mindepth 2 -type f))
+Files :$(while read FILE; do FILE_DIR="${FILE%/*}"; echo " ${FILE} ${FILE_DIR#*prefix}/"; done < <(find prefix/ -mindepth 2 -type f))
 Description: pcloudcc-lneely is an independent fork of the inactive pcloudcom/console-client
  .
  It's used to mount pCloud folder as a local directory.
