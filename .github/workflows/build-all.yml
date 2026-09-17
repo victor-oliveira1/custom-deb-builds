@@ -112,7 +112,9 @@ jobs:
 
     steps:
       - name: Configure Git Safe Directory
-        run: git config --global --add safe.directory '*'
+        run: |
+          apt update && apt -y install git
+          git config --global --add safe.directory '*'
 
       - name: Main repo checkout
         uses: actions/checkout@v4
