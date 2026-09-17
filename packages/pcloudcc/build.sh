@@ -17,13 +17,16 @@ apt-get update && apt-get install -y git \
                                      pkgconf
 
 # 2. Clona e compila
-git clone https://github.com/lneely/pcloudcc-lneely build_src
-cd build_src
+git clone https://github.com/lneely/pcloudcc-lneely
+cd pcloudcc-lneely
 git checkout "$VERSION"
 
 make -j$(nproc)
 mkdir -p prefix/usr/bin
 cp pcloudcc prefix/usr/bin/
+
+mkdir debian
+touch debian/control
 
 # 3. Gera o arquivo control do equivs
 cat <<EOF > "${PKG_NAME}".control
