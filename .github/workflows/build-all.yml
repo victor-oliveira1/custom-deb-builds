@@ -99,7 +99,7 @@ jobs:
             echo "No updates found."
           fi
 
-  build-and-deploy:
+  build-packages:
     needs: prepare-builds
     if: needs.prepare-builds.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
@@ -125,14 +125,28 @@ jobs:
           LATEST="${{ matrix.version }}"
           PKG_DIR="packages/${PKG}"
 
-          mkdir -p /tmp/debs versions
+          mkdir -p /tmp/debs
           chmod +x "${PKG_DIR}/build.sh"
 
           WORK_DIR=$(mktemp -d)
           (cd "$WORK_DIR" && "${GITHUB_WORKSPACE}/${PKG_DIR}/build.sh" "$LATEST" "/tmp/debs")
 
-          echo "$LATEST" > "${GITHUB_WORKSPACE}/versions/${PKG}.txt"
+          mkdir -p /tmp/versions
+          echo "$LATEST" > "/tmp/versions/${PKG}.txt"
 
+      - name: Save built DEBs and version info
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-result-${{ matrix.package }}
+          path: |
+            /tmp/debs/*.deb
+            /tmp/versions/*.txt
+          retention-days: 1
+
+  deploy-all:
+    needs: build-packages
+    runs-on: ubuntu-latest
+    steps:
       - name: Checkout debian_repo
         uses: actions/checkout@v4
         with:
@@ -140,16 +154,24 @@ jobs:
           token: ${{ secrets.DEBIAN_REPO_TOKEN }}
           path: debian_repo
 
-      - name: Copy deb file to debian_repo
-        run: |
-          mkdir -p debian_repo/deb/
-          cp /tmp/debs/*.deb debian_repo/deb/
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-result-*
+          merge-multiple: true
+          path: /tmp/output
 
-      - name: Commit deb file to debian_repo
+      - name: Organize files
+        run: |
+          mkdir -p debian_repo/deb/ versions/
+          cp /tmp/output/*.deb debian_repo/deb/ 2>/dev/null || true
+          cp /tmp/output/*.txt versions/ 2>/dev/null || true
+
+      - name: Commit DEBs to debian_repo
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           repository: debian_repo
-          commit_message: "chore(${{ matrix.package }}): add deb for version ${{ matrix.version }}"
+          commit_message: "chore: update debian packages"
           file_pattern: 'deb/*.deb'
           commit_user_name: 'github-actions[bot]'
           commit_user_email: 'github-actions[bot]@users.noreply.github.com'
@@ -157,21 +179,11 @@ jobs:
       - name: Checkout main repo
         uses: actions/checkout@v4
 
-      - name: Update package version on repo
-        env:
-          PKG_NAME: ${{ matrix.package }}
-          PKG_VER: ${{ matrix.version }}
-        run: |
-          mkdir -p versions
-          cat <<EOF > "versions/${PKG_NAME}.txt"
-          ${PKG_VER}
-          EOF
-
-      - name: Commit the new version file to main repo
+      - name: Commit version files to main repo
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           repository: .
-          commit_message: "chore(${{ matrix.package }}): update version file to ${{ matrix.version }} [skip ci]"
+          commit_message: "chore: update package version files [skip ci]"
           file_pattern: 'versions/*.txt'
           commit_user_name: 'github-actions[bot]'
           commit_user_email: 'github-actions[bot]@users.noreply.github.com'
