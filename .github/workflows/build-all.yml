@@ -9,9 +9,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ------------------------------------------------------------------
-  # JOB 1: Descobre todos os diretórios em packages/
-  # ------------------------------------------------------------------
   discover:
     runs-on: ubuntu-latest
     outputs:
@@ -23,9 +20,6 @@ jobs:
           PKGS=$(ls -d packages/*/ | xargs -n 1 basename | jq -R . | jq -s -c .)
           echo "packages=${PKGS}" >> $GITHUB_OUTPUT
 
-  # ------------------------------------------------------------------
-  # JOB 2: Checa versões em paralelo e filtra quem precisa de build
-  # ------------------------------------------------------------------
   check-versions:
     needs: discover
     runs-on: ubuntu-latest
@@ -40,13 +34,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validar versão do pacote
+      - name: Validate package version
         id: check
         run: |
           PKG="${{ matrix.package }}"
           PKG_DIR="packages/${PKG}"
           VERSION_FILE="versions/${PKG}.txt"
-          
+
           CURRENT=""
           [ -f "$VERSION_FILE" ] && CURRENT=$(cat "$VERSION_FILE")
 
@@ -55,14 +49,14 @@ jobs:
 
           if [ "$CURRENT" != "$LATEST" ] && [ -n "$LATEST" ]; then
             echo "Nova versão detectada para ${PKG}: ${LATEST} (Atual: ${CURRENT})"
-            
+
             mkdir -p /tmp/updates
             echo "{\"package\": \"${PKG}\", \"version\": \"${LATEST}\"}" > "/tmp/updates/${PKG}.json"
           else
             echo "${PKG} já está na versão mais recente (${CURRENT})."
           fi
 
-      - name: Salvar registro de atualização
+      - name: Save update data
         uses: actions/upload-artifact@v4
         with:
           name: update-${{ matrix.package }}
@@ -77,7 +71,7 @@ jobs:
       build_matrix: ${{ steps.filter.outputs.build_matrix }}
       has_updates: ${{ steps.filter.outputs.has_updates }}
     steps:
-      - name: Baixar registros de atualização
+      - name: Get update data
         uses: actions/download-artifact@v4
         with:
           path: /tmp/all-updates
@@ -85,23 +79,20 @@ jobs:
           merge-multiple: true
         continue-on-error: true
 
-      - name: Gerar matriz apenas para pacotes desatualizados
+      - name: Generate matrix for updates
         id: filter
         run: |
           if [ -d "/tmp/all-updates" ] && [ "$(ls -A /tmp/all-updates/*.json 2>/dev/null)" ]; then
             MATRIX=$(jq -s -c . /tmp/all-updates/*.json)
             echo "build_matrix=${MATRIX}" >> $GITHUB_OUTPUT
             echo "has_updates=true" >> $GITHUB_OUTPUT
-            echo "Pacotes pendentes de build: ${MATRIX}"
+            echo "Updates found for package: ${MATRIX}"
           else
             echo "build_matrix=[]" >> $GITHUB_OUTPUT
             echo "has_updates=false" >> $GITHUB_OUTPUT
-            echo "Nenhum pacote precisa de atualização."
+            echo "No updates found."
           fi
 
-  # ------------------------------------------------------------------
-  # JOB 3: Compila e faz deploy APENAS dos pacotes desatualizados
-  # ------------------------------------------------------------------
   build-and-deploy:
     needs: prepare-builds
     if: needs.prepare-builds.outputs.has_updates == 'true'
@@ -114,44 +105,43 @@ jobs:
         include: ${{ fromJSON(needs.prepare-builds.outputs.build_matrix) }}
 
     steps:
-      - name: Checkout repositório principal
+      - name: Main repo checkout
         uses: actions/checkout@v4
 
-      - name: Configurar ambiente e Git
+      - name: Configure environment and install git
         run: |
           apt-get update && apt-get install -y curl git equivs
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
-      - name: Compilar pacote e gravar arquivo de versão
+      - name: Build package
         run: |
           PKG="${{ matrix.package }}"
           LATEST="${{ matrix.version }}"
           PKG_DIR="packages/${PKG}"
-          
+
           mkdir -p /tmp/debs versions
           chmod +x "${PKG_DIR}/build.sh"
 
           WORK_DIR=$(mktemp -d)
           (cd "$WORK_DIR" && "${GITHUB_WORKSPACE}/${PKG_DIR}/build.sh" "$LATEST" "/tmp/debs")
-          
-          # Escreve no arquivo de versão local imediatamente após o sucesso do build
+
           echo "$LATEST" > "${GITHUB_WORKSPACE}/versions/${PKG}.txt"
 
-      - name: Clonar debian_repo
+      - name: Checkout debian_repo
         uses: actions/checkout@v4
         with:
           repository: victor-oliveira1/debian_repo
           token: ${{ secrets.DEBIAN_REPO_TOKEN }}
           path: debian_repo
 
-      - name: Mover arquivos .deb para a pasta do repositório remoto
+      - name: Copy deb file to debian_repo
         run: |
           mkdir -p debian_repo/deb/
           cp /tmp/debs/*.deb debian_repo/deb/
 
-      - name: Autocommit dos pacotes .deb no debian_repo
+      - name: Commit deb file to debian_repo
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           repository: debian_repo
@@ -160,10 +150,10 @@ jobs:
           commit_user_name: 'github-actions[bot]'
           commit_user_email: 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Checkout repositório principal
+      - name: Checkout main repo
         uses: actions/checkout@v4
 
-      - name: Criar arquivo de versão
+      - name: Update package version on repo
         env:
           PKG_NAME: ${{ matrix.package }}
           PKG_VER: ${{ matrix.version }}
@@ -173,7 +163,7 @@ jobs:
           ${PKG_VER}
           EOF
 
-      - name: Autocommit do arquivo de versão local no repositório principal
+      - name: Commit the new version file to main repo
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           repository: .
