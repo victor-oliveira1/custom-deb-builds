@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 set -e
 
-echo "0: $0"
-echo "SOURCE: ${BASH_SOURCE[0]}"
+PKG_NAME=$(awk -F'/' '{print $(NF-1)}' <<<"${0}")
 VERSION="$1"
 OUTPUT_DIR="$2"
 
 # 1. Instala dependências específicas deste app
 apt-get update && apt-get install -y git \
-                                     sudo \
                                      equivs \
                                      libfuse3-dev \
                                      libreadline-dev \
                                      libmbedtls-dev \
                                      libsqlite3-dev \
-                                     libudev-dev
+                                     libudev-dev \
+                                     zlib1g-dev
 
 # 2. Clona e compila
 git clone https://github.com/lneely/pcloudcc-lneely build_src
@@ -26,12 +25,12 @@ mkdir -p prefix/usr/bin
 cp pcloudcc prefix/usr/bin/
 
 # 3. Gera o arquivo control do equivs
-cat <<EOF > pcloudcc.control
+cat <<EOF > "${PKG_NAME}".control
 Section: net
 Priority: optional
 Standards-Version: 3.9.2
 
-Package: pcloudcc
+Package: "${PKG_NAME}"
 Version: 0.0~git$(date +%Y%m%d).${VERSION}-1
 Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
 Architecture: amd64
@@ -43,5 +42,5 @@ Description: pcloudcc-lneely is an independent fork of the inactive pcloudcom/co
 EOF
 
 # 4. Empacota e move para o diretório de saída global
-DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build pcloudcc.control
+DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build "${PKG_NAME}".control
 cp *.deb "$OUTPUT_DIR/"
