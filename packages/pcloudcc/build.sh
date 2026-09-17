@@ -35,7 +35,7 @@ Priority: optional
 Standards-Version: 3.9.2
 
 Package: $PKG_NAME
-0.0~git$(date +%Y%m%d).${VERSION}-1
+Version: 0.0~git$(date +%Y%m%d).${VERSION}-1
 Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
 Architecture: amd64
 Depends: $(find prefix -type f -exec dpkg-shlibdeps -O {} + 2>/dev/null | sed -e 's/shlibs:Depends=//' -e 's/\n/,/g' -e 's/,,*/,/g; s/^,//; s/,$//')
