@@ -13,7 +13,8 @@ apt-get update && apt-get install -y git \
                                      libmbedtls-dev \
                                      libsqlite3-dev \
                                      libudev-dev \
-                                     zlib1g-dev
+                                     zlib1g-dev \
+                                     pkgconf
 
 # 2. Clona e compila
 git clone https://github.com/lneely/pcloudcc-lneely build_src
