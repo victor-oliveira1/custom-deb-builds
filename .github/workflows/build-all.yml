@@ -166,6 +166,7 @@ jobs:
           mkdir -p debian_repo/deb/ versions/
           cp /tmp/output/*.deb debian_repo/deb/ 2>/dev/null || true
           cp /tmp/output/*.txt versions/ 2>/dev/null || true
+          find /tmp/output
 
       - name: Commit DEBs to debian_repo
         uses: stefanzweifel/git-auto-commit-action@v5
