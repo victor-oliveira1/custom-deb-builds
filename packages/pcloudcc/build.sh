@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-PKG_NAME=$(awk -F'/' '{print $(NF-1)}' <<<"${0}")
+PKG_NAME="pcloudcc"
 VERSION="$1"
 OUTPUT_DIR="$2"
 
@@ -29,12 +29,12 @@ mkdir debian
 touch debian/control
 
 # 3. Gera o arquivo control do equivs
-cat <<EOF > "${PKG_NAME}".control
+cat <<EOF > "$PKG_NAME.control"
 Section: net
 Priority: optional
 Standards-Version: 3.9.2
 
-Package: "${PKG_NAME}"
+Package: $PKG_NAME
 Version: 0.0~git${VERSION}-1
 Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
 Architecture: amd64
@@ -46,5 +46,5 @@ Description: pcloudcc-lneely is an independent fork of the inactive pcloudcom/co
 EOF
 
 # 4. Empacota e move para o diretório de saída global
-DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build "${PKG_NAME}".control
+DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build "$PKG_NAME.control"
 cp *.deb "$OUTPUT_DIR/"
