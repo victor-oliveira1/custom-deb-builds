@@ -161,12 +161,10 @@ jobs:
           merge-multiple: true
           path: /tmp/output
 
-      - name: Organize files
+      - name: Copy deb files
         run: |
-          mkdir -p debian_repo/deb/ versions/
-          cp /tmp/output/*.deb debian_repo/deb/ 2>/dev/null || true
-          cp /tmp/output/*.txt versions/ 2>/dev/null || true
-          find /tmp/output
+          mkdir -p debian_repo/deb/
+          cp /tmp/output/debs/*.deb debian_repo/deb/ 2>/dev/null || true
 
       - name: Commit DEBs to debian_repo
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -179,6 +177,11 @@ jobs:
 
       - name: Checkout main repo
         uses: actions/checkout@v4
+
+      - name: Copy version files
+        run: |
+          mkdir -p versions/
+          cp /tmp/output/versions/*.txt versions/ 2>/dev/null || true
 
       - name: Commit version files to main repo
         uses: stefanzweifel/git-auto-commit-action@v5
