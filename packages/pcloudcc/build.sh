@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-PKG_NAME="pcloudcc"
+PKG_NAME=$(awk -F'/' '{print $(NF-1)}' <<<"$0")
 VERSION="$1"
 OUTPUT_DIR="$2"
 
