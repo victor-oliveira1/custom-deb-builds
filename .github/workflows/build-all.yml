@@ -121,7 +121,6 @@ jobs:
 
       - name: Build package
         id: build-package
-        continue-on-error: true
         run: |
           PKG="${{ matrix.package }}"
           LATEST="${{ matrix.version }}"
@@ -136,11 +135,6 @@ jobs:
           mkdir -p /tmp/versions
           echo "$LATEST" > "/tmp/versions/${PKG}.txt"
 
-      - name: Alerta de erro no dpkg-shlibdeps
-        if: steps.build-package.outcome == 'failure'
-        run: |
-          echo "::warning title=Task Failed::Build package ${{ matrix.package }}"
-
       - name: Save built DEBs and version info
         uses: actions/upload-artifact@v4
         with:
@@ -152,6 +146,7 @@ jobs:
 
   deploy-all:
     needs: build-packages
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Checkout debian_repo
