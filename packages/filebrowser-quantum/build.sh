@@ -7,7 +7,8 @@ OUTPUT_DIR="$2"
 
 apt update && apt install -y jq \
                              curl \
-                             equivs
+                             equivs \
+                             binutils-arm-linux-gnueabihf
 
 mkdir -p prefix/usr/bin/
 URL=$(curl -s "https://api.github.com/repos/gtsteffaniak/filebrowser/releases/latest" | jq -r '.assets[]|select(.name == "linux-armv7-filebrowser")|.browser_download_url')
@@ -22,7 +23,6 @@ Package: ${PKG_NAME}
 Version: ${VERSION#v}
 Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
 Architecture: armhf
-No-Shlibs: arch
 Files: $(while read FILE; do FILE_DIR="${FILE%/*}"; echo " ${FILE} ${FILE_DIR#*prefix}/"; done < <(find prefix/ -mindepth 2 -type f))
 Description: Web-based file manager (Quantum fork)
  Filebrowser Quantum is a features-rich web file manager fork designed to
