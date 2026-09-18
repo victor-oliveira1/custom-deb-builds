@@ -120,6 +120,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build package
+        id: build-package
         continue-on-error: true
         run: |
           PKG="${{ matrix.package }}"
@@ -134,6 +135,11 @@ jobs:
 
           mkdir -p /tmp/versions
           echo "$LATEST" > "/tmp/versions/${PKG}.txt"
+
+      - name: Alerta de erro no dpkg-shlibdeps
+        if: steps.build-package.outcome == 'failure'
+        run: |
+          echo "::warning title=Task Failed::Build package ${{ matrix.package }}"
 
       - name: Save built DEBs and version info
         uses: actions/upload-artifact@v4
