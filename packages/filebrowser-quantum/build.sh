@@ -11,7 +11,7 @@ apt update && apt install -y jq \
                              binutils-arm-linux-gnueabihf
 
 mkdir -p prefix/usr/bin/
-URL=$(curl -s "https://api.github.com/repos/gtsteffaniak/filebrowser/releases/latest" | jq -r '.assets[]|select(.name == "linux-armv7-filebrowser")|.browser_download_url')
+URL=$(curl -s "https://api.github.com/repos/gtsteffaniak/filebrowser/releases/tags/$VERSION" | jq -r '.assets[]|select(.name == "linux-armv7-filebrowser")|.browser_download_url')
 curl -L "$URL" --output prefix/usr/bin/filebrowser-quantum
 
 cat <<EOF > "$PKG_NAME.control"
