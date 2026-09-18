@@ -5,7 +5,10 @@ PKG_NAME=$(awk -F'/' '{print $(NF-1)}' <<<"$0")
 VERSION="$1"
 OUTPUT_DIR="$2"
 
-apt update && apt install -y jq curl equivs
+apt update && apt install -y jq \
+                             curl \
+                             equivs \
+                             arm-linux-gnueabihf-objdump
 
 mkdir -p prefix/usr/bin/
 URL=$(curl -s "https://api.github.com/repos/gtsteffaniak/filebrowser/releases/latest" | jq -r '.assets[]|select(.name == "linux-armv7-filebrowser")|.browser_download_url')
@@ -27,6 +30,6 @@ Description: Web-based file manager (Quantum fork)
  uploading, editing, previewing, user management, and custom commands execution.
 EOF
 
-DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build "$PKG_NAME.control"
+DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build --arch armhf "$PKG_NAME.control"
 
 cp *.deb "$OUTPUT_DIR/"
