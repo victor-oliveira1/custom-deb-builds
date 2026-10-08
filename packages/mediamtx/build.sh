@@ -14,6 +14,8 @@ mkdir -p prefix/usr/bin/
 mkdir -p prefix/usr/share/doc/$PKG_NAME
 URL=$(curl -s "https://api.github.com/repos/bluenviron/mediamtx/releases/tags/$VERSION" | jq -r '.assets[]|select(.name|contains("armv7"))|.browser_download_url')
 
+curl -L "$URL" -O
+
 tar xvf "${URL##*/}"
 
 mv ./mediamtx prefix/usr/bin/
