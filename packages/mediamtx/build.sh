@@ -32,7 +32,7 @@ Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
 Architecture: armhf
 Files: $(while read FILE; do FILE_DIR="${FILE%/*}"; echo " ${FILE} ${FILE_DIR#*prefix}/"; done < <(find prefix/ -mindepth 2 -type f))
 Description: MediaMTX is a real-time media server and media proxy that
-allows to publish, read, and proxy live video and audio streams.
+ allows to publish, read, and proxy live video and audio streams.
 EOF
 
 DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build --arch armhf "$PKG_NAME.control"
