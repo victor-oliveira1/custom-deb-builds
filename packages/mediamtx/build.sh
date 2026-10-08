@@ -31,16 +31,8 @@ Version: ${VERSION#v}
 Maintainer: Victor Oliveira <victor.oliveira@gmx.com>
 Architecture: armhf
 Files: $(while read FILE; do FILE_DIR="${FILE%/*}"; echo " ${FILE} ${FILE_DIR#*prefix}/"; done < <(find prefix/ -mindepth 2 -type f))
-Description: Ready-to-use real-time media server and proxy
-MediaMTX (formerly rtsp-simple-server) is a ready-to-use and zero-dependency
-real-time media server and media proxy that allows to publish, read,
-and proxy live video and audio streams.
-.
-Key features:
-Supports RTSP, RTMP, HLS, WebRTC, and SRT protocols.
-Allows publishing and reading streams across different protocols.
-Low latency and low resource consumption.
-Written in Go.
+Description: MediaMTX is a real-time media server and media proxy that
+allows to publish, read, and proxy live video and audio streams.
 EOF
 
 DEB_BUILD_OPTIONS="nostrip nodwz" equivs-build --arch armhf "$PKG_NAME.control"
