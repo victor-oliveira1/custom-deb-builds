@@ -14,7 +14,8 @@ apt-get update && apt-get install -y git \
                                      libxi-dev \
                                      libmagic-dev \
                                      equivs \
-                                     gcc
+                                     gcc \
+                                     python3
 
 
 # 2. Clona e compila
